@@ -1,5 +1,4 @@
 use core::f32;
-use std::sync::Mutex;
 
 use crate::boid_store::{BoidStore, BoidWrapper};
 use bevy::prelude::*;
@@ -126,89 +125,87 @@ pub fn run_physics(
     let max = area.max;
     let min = area.min;
 
-    let boids = Mutex::new(boids);
+    for (mut direction, transform, entity) in directions.iter_mut() {
+        let mut wall_dirs: Vec2 = Vec2::default();
+        let loop_boid_pos: Vec2 = transform.translation.truncate();
 
-    directions
-        .par_iter_mut()
-        .for_each(|(mut direction, transform, entity)| {
-            let mut wall_dirs: Vec2 = Vec2::default();
-            let loop_boid_pos: Vec2 = transform.translation.truncate();
+        let dist = loop_boid_pos.x - min.x;
+        if dist < factors.wall_avoidance_distance {
+            println!("too close to left wall");
+            wall_dirs += Vec2::new(1f32, 0f32)
+                * (factors.wall_avoidance_distance - dist)
+                * factors.wall_avoidance_factor;
+        }
 
-            let dist = loop_boid_pos.x - min.x;
-            if dist < factors.wall_avoidance_distance {
-                println!("too close to left wall");
-                wall_dirs += Vec2::new(1f32, 0f32)
-                    * (factors.wall_avoidance_distance - dist)
-                    * factors.wall_avoidance_factor;
+        let dist = max.x - loop_boid_pos.x;
+        if dist < factors.wall_avoidance_distance {
+            println!("too close to right wall");
+            wall_dirs += Vec2::new(-1f32, 0f32)
+                * (factors.wall_avoidance_distance - dist)
+                * factors.wall_avoidance_factor;
+        }
+
+        let dist = loop_boid_pos.y - min.y;
+        if dist < factors.wall_avoidance_distance {
+            println!("too close to top wall");
+            wall_dirs += Vec2::new(0f32, 1f32)
+                * (factors.wall_avoidance_distance - dist)
+                * factors.wall_avoidance_factor;
+        }
+
+        let dist = max.y - loop_boid_pos.y;
+        if dist < factors.wall_avoidance_distance {
+            println!("too close to bottom wall");
+            wall_dirs += Vec2::new(0f32, -1f32)
+                * (factors.wall_avoidance_distance - dist)
+                * factors.wall_avoidance_factor;
+        }
+        direction.0 += wall_dirs;
+
+        let flock = boids.get_boids(transform.translation.truncate());
+        let flock: Vec<_> = flock
+            .iter()
+            .filter(|b| {
+                b.entity != entity && (b.position - loop_boid_pos).length() < factors.flock_distance
+            })
+            .collect();
+
+        if flock.len() > 0 {
+            let mut avoid_vec = Vec2::default();
+            for boid in flock.iter() {
+                if (boid.position - loop_boid_pos).length() < factors.avoidance_distance {
+                    avoid_vec += loop_boid_pos - boid.position;
+                }
             }
 
-            let dist = max.x - loop_boid_pos.x;
-            if dist < factors.wall_avoidance_distance {
-                println!("too close to right wall");
-                wall_dirs += Vec2::new(-1f32, 0f32)
-                    * (factors.wall_avoidance_distance - dist)
-                    * factors.wall_avoidance_factor;
-            }
+            direction.0 += avoid_vec * factors.avoidance_factor;
 
-            let dist = loop_boid_pos.y - min.y;
-            if dist < factors.wall_avoidance_distance {
-                println!("too close to top wall");
-                wall_dirs += Vec2::new(0f32, 1f32)
-                    * (factors.wall_avoidance_distance - dist)
-                    * factors.wall_avoidance_factor;
-            }
-
-            let dist = max.y - loop_boid_pos.y;
-            if dist < factors.wall_avoidance_distance {
-                println!("too close to bottom wall");
-                wall_dirs += Vec2::new(0f32, -1f32)
-                    * (factors.wall_avoidance_distance - dist)
-                    * factors.wall_avoidance_factor;
-            }
-            direction.0 += wall_dirs;
-
-            let mut binding = boids.lock().unwrap();
-            let flock = binding.get_boids(transform.translation.truncate());
-            let flock: Vec<_> = flock
+            let align_vec = (flock
                 .iter()
-                .collect();
+                .fold(Vec2::default(), |acc, boid| acc + boid.velocity)
+                / flock.len() as f32)
+                - direction.0;
+            direction.0 += align_vec * factors.align_factor;
 
-            if flock.len() > 0 {
-                let mut avoid_vec = Vec2::default();
-                for boid in flock.iter() {
-                    if (boid.position - loop_boid_pos).length() < factors.avoidance_distance {
-                        avoid_vec += loop_boid_pos - boid.position;
-                    }
-                }
+            let cohere_vec = (flock
+                .iter()
+                .fold(Vec2::default(), |acc, boid| acc + boid.position)
+                / flock.len() as f32)
+                - loop_boid_pos;
+            direction.0 += cohere_vec * factors.cohere_factor;
+        }
 
-                direction.0 += avoid_vec * factors.avoidance_factor;
-
-                let align_vec = (flock
-                    .iter()
-                    .fold(Vec2::default(), |acc, boid| acc + boid.velocity)
-                    / flock.len() as f32)
-                    - direction.0;
-                direction.0 += align_vec * factors.align_factor;
-
-                let cohere_vec = (flock
-                    .iter()
-                    .fold(Vec2::default(), |acc, boid| acc + boid.position)
-                    / flock.len() as f32)
-                    - loop_boid_pos;
-                direction.0 += cohere_vec * factors.cohere_factor;
+        if direction.0.length() > factors.max_speed {
+            direction.0 = direction.0.normalize() * factors.max_speed;
+        } else if direction.0.length() < factors.min_speed {
+            if direction.0.length() < 0.001f32 {
+                direction.0 = Vec2::new(1f32, 0f32);
             }
+            direction.0 = direction.0.normalize() * factors.min_speed;
+        }
 
-            if direction.0.length() > factors.max_speed {
-                direction.0 = direction.0.normalize() * factors.max_speed;
-            } else if direction.0.length() < factors.min_speed {
-                if direction.0.length() < 0.001f32 {
-                    direction.0 = Vec2::new(1f32, 0f32);
-                }
-                direction.0 = direction.0.normalize() * factors.min_speed;
-            }
-
-            binding.update_boid(entity, transform.translation.truncate(), direction.0);
-        });
+        boids.update_boid(entity, transform.translation.truncate(), direction.0);
+    }
 }
 
 pub fn average(input: Vec<Vec2>) -> Vec2 {
