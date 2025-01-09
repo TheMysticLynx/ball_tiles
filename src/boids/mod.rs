@@ -125,13 +125,12 @@ pub fn run_physics(
     let max = area.max;
     let min = area.min;
 
-    for (mut direction, transform, entity) in directions.iter_mut() {
+    directions.par_iter_mut().for_each(|(mut direction, transform, entity)| {
         let mut wall_dirs: Vec2 = Vec2::default();
         let loop_boid_pos: Vec2 = transform.translation.truncate();
 
         let dist = loop_boid_pos.x - min.x;
         if dist < factors.wall_avoidance_distance {
-            println!("too close to left wall");
             wall_dirs += Vec2::new(1f32, 0f32)
                 * (factors.wall_avoidance_distance - dist)
                 * factors.wall_avoidance_factor;
@@ -139,7 +138,6 @@ pub fn run_physics(
 
         let dist = max.x - loop_boid_pos.x;
         if dist < factors.wall_avoidance_distance {
-            println!("too close to right wall");
             wall_dirs += Vec2::new(-1f32, 0f32)
                 * (factors.wall_avoidance_distance - dist)
                 * factors.wall_avoidance_factor;
@@ -147,7 +145,6 @@ pub fn run_physics(
 
         let dist = loop_boid_pos.y - min.y;
         if dist < factors.wall_avoidance_distance {
-            println!("too close to top wall");
             wall_dirs += Vec2::new(0f32, 1f32)
                 * (factors.wall_avoidance_distance - dist)
                 * factors.wall_avoidance_factor;
@@ -155,7 +152,6 @@ pub fn run_physics(
 
         let dist = max.y - loop_boid_pos.y;
         if dist < factors.wall_avoidance_distance {
-            println!("too close to bottom wall");
             wall_dirs += Vec2::new(0f32, -1f32)
                 * (factors.wall_avoidance_distance - dist)
                 * factors.wall_avoidance_factor;
@@ -163,12 +159,12 @@ pub fn run_physics(
         direction.0 += wall_dirs;
 
         let flock = boids.get_boids(transform.translation.truncate());
-        let flock: Vec<_> = flock
-            .iter()
-            .filter(|b| {
-                b.entity != entity && (b.position - loop_boid_pos).length() < factors.flock_distance
-            })
-            .collect();
+        // let flock: Vec<_> = flock
+        //     .iter()
+        //     .filter(|b| {
+        //         b.entity != entity && (b.position - loop_boid_pos).length() < factors.flock_distance
+        //     })
+        //     .collect();
 
         if flock.len() > 0 {
             let mut avoid_vec = Vec2::default();
@@ -203,7 +199,9 @@ pub fn run_physics(
             }
             direction.0 = direction.0.normalize() * factors.min_speed;
         }
+    });
 
+    for (direction, transform, entity) in directions.iter() {
         boids.update_boid(entity, transform.translation.truncate(), direction.0);
     }
 }

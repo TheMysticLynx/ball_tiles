@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use crate::boid_store::BoidStore;
 use bevy::prelude::*;
-use bevy_framepace::Limiter;
 use bevy_mod_imgui::ImguiContext;
 use boids::{
     handle_rotation_and_movement, run_physics, spawn_boids, track_boids, update_stored_info,
